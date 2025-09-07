@@ -10,15 +10,15 @@ from datetime import datetime
 # ========== CONFIG ==========
 BOT_TOKEN = "8371666572:AAGvdLmzlEi-NEoFgSfJwli17VmQpked8-M"
 CHANNELS = ["@vidoe66", "@vidoe55", "@vidoe88"]  # ডিফল্ট চ্যানেল
-LINK_LAYLA = "https://example.com/layla"
-LINK_OTHER = "https://example.com/other"
-VIDEO_LINK_TEMPLATE = "https://example.com/video?user={user_id}"
+LINK_LAYLA = "https://www.revenuecpmgate.com/jxgvbk9x4?key=7a6c389891030baabd6368f0fcff5b3f"
+LINK_OTHER = "https://www.revenuecpmgate.com/ecixkfkxp?key=e5afcf213bd677e460eaf971ad6f862a"
+VIDEO_LINK_TEMPLATE = "https://www.revenuecpmgate.com/i7pd0pg6?key=51e488e96a25bdded506db61a1e879c1"
 
 OWNER_ID = 7224513731
 DB_PATH = "verified_users.db"
 
 # Verified ইউজারদের ইনফরমেশন যে গ্রুপে যাবে
-LOG_GROUP_ID = -1009999999999   # <-- এখানে তোমার গ্রুপ আইডি বসাও
+LOG_GROUP_ID = -1002780174909   # <-- এখানে তোমার গ্রুপ আইডি বসাও
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
