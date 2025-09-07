@@ -1,5 +1,6 @@
 # pretty_verify_bot.py
 # প্রয়োজন: pip install pyTelegramBotAPI
+
 import telebot
 from telebot import types
 import sqlite3
@@ -8,53 +9,60 @@ from datetime import datetime
 
 # ========== CONFIG ==========
 BOT_TOKEN = "8371666572:AAGvdLmzlEi-NEoFgSfJwli17VmQpked8-M"
-CHANNELS = ["@vidoe66", "@vidoe55", "@vidoe88"]
-
-LINK_LAYLA = "https://www.revenuecpmgate.com/i7pd0pg6?key=51e488e96a25bdded506db61a1e879c1"
-LINK_OTHER = "https://www.revenuecpmgate.com/ecixkfkxp?key=e5afcf213bd677e460eaf971ad6f862a"
-VIDEO_LINK_TEMPLATE = "https://www.revenuecpmgate.com/jxgvbk9x4?key=7a6c389891030baabd6368f0fcff5b3f"
+CHANNELS = ["@vidoe66", "@vidoe55", "@vidoe88"]  # ডিফল্ট চ্যানেল
+LINK_LAYLA = "https://example.com/layla"
+LINK_OTHER = "https://example.com/other"
+VIDEO_LINK_TEMPLATE = "https://example.com/video?user={user_id}"
 
 OWNER_ID = 7224513731
 DB_PATH = "verified_users.db"
-# ========================================
+
+# Verified ইউজারদের ইনফরমেশন যে গ্রুপে যাবে
+LOG_GROUP_ID = -1009999999999   # <-- এখানে তোমার গ্রুপ আইডি বসাও
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-
 # ---------------- Database ----------------
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS verified (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            first_name TEXT,
-            last_name TEXT,
-            photo_file_id TEXT,
-            verified_at INTEGER
-        )
+    CREATE TABLE IF NOT EXISTS verified (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        photo_file_id TEXT,
+        verified_at INTEGER
+    )
     """)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            user_id INTEGER PRIMARY KEY
-        )
+    CREATE TABLE IF NOT EXISTS admins (
+        user_id INTEGER PRIMARY KEY
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS channels (
+        channel_username TEXT PRIMARY KEY
+    )
     """)
     cur.execute("INSERT OR IGNORE INTO admins(user_id) VALUES(?)", (OWNER_ID,))
+    # ডিফল্ট চ্যানেল লিস্ট ডাটাবেসে ইনসার্ট
+    for ch in CHANNELS:
+        cur.execute("INSERT OR IGNORE INTO channels(channel_username) VALUES(?)", (ch,))
     conn.commit()
     conn.close()
-
 
 def save_verified(user_id, username, first, last, photo_file_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
-        INSERT OR REPLACE INTO verified(user_id, username, first_name, last_name, photo_file_id, verified_at)
-        VALUES(?,?,?,?,?,?)
+    INSERT OR REPLACE INTO verified(user_id, username, first_name, last_name, photo_file_id, verified_at)
+    VALUES(?,?,?,?,?,?)
     """, (user_id, username, first, last, photo_file_id, int(time.time())))
     conn.commit()
     conn.close()
-
 
 def get_verified_all():
     conn = sqlite3.connect(DB_PATH)
@@ -64,7 +72,6 @@ def get_verified_all():
     conn.close()
     return rows
 
-
 def add_admin(user_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -72,14 +79,12 @@ def add_admin(user_id):
     conn.commit()
     conn.close()
 
-
 def remove_admin(user_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
-
 
 def list_admins():
     conn = sqlite3.connect(DB_PATH)
@@ -89,7 +94,6 @@ def list_admins():
     conn.close()
     return rows
 
-
 def is_admin(user_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -98,15 +102,36 @@ def is_admin(user_id):
     conn.close()
     return bool(r)
 
+def get_channels():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT channel_username FROM channels")
+    rows = [r[0] for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+def add_channel(ch):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO channels(channel_username) VALUES(?)", (ch,))
+    conn.commit()
+    conn.close()
+
+def remove_channel(ch):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM channels WHERE channel_username = ?", (ch,))
+    conn.commit()
+    conn.close()
 
 # ---------------- Utilities ----------------
+
 def channels_join_keyboard():
     kb = types.InlineKeyboardMarkup(row_width=1)
-    for ch in CHANNELS:
+    for ch in get_channels():
         kb.add(types.InlineKeyboardButton(text=f"Join {ch}", url=f"https://t.me/{ch.lstrip('@')}"))
     kb.add(types.InlineKeyboardButton(text="✅ Verify", callback_data="verify_join"))
     return kb
-
 
 def links_keyboard_for_user(user_id):
     kb = types.InlineKeyboardMarkup(row_width=1)
@@ -115,29 +140,51 @@ def links_keyboard_for_user(user_id):
     kb.add(types.InlineKeyboardButton(text="ওল ভিডিও লিংক", url=VIDEO_LINK_TEMPLATE.format(user_id=user_id)))
     return kb
 
+def log_to_group(user, action="started"):
+    """Owner group-এ ইউজারের ইনফো পাঠাবে"""
+    try:
+        photo_file_id = None
+        photos = bot.get_user_profile_photos(user.id)
+        if photos.total_count > 0:
+            photo_file_id = photos.photos[0][-1].file_id
+    except Exception:
+        pass
+
+    txt = (f"👤 User {action}\n"
+           f"ID: <code>{user.id}</code>\n"
+           f"Name: {user.first_name} {user.last_name or ''}\n"
+           f"Username: @{user.username or '-'}\n"
+           f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    try:
+        if photo_file_id:
+            bot.send_photo(LOG_GROUP_ID, photo=photo_file_id, caption=txt)
+        else:
+            bot.send_message(LOG_GROUP_ID, txt)
+    except Exception as e:
+        print("log_to_group error:", e)
 
 # ---------------- Handlers ----------------
+
 @bot.message_handler(commands=['start'])
 def cmd_start(m: types.Message):
     txt = ("🔥 টিকটকারদের🥵 ভাইরাল লিংক পেতে চাইলে প্রথমে নিচের ৩টা চ্যানেলে জয়েন করো মামা পুরো ফাটাফাটি লিংক🥵 সামনে বাচ্চাদের লিংক দিবো 😵‍💫এই বটেই ।\n\n"
-           "তারপর ✅ Verify টিপো — না হলে লিংক পাবেন না🥳।")
+           "তারপর ✅ Verify টিপো — না হলে লিংক পাবেন না🥳")
     kb = channels_join_keyboard()
     bot.send_message(m.chat.id, txt, reply_markup=kb)
-
+    log_to_group(m.from_user, action="started bot")
 
 @bot.callback_query_handler(func=lambda call: call.data == "verify_join")
 def callback_verify(call: types.CallbackQuery):
     user = call.from_user
     chat_id = user.id
 
-    # সবসময় সাথে সাথে callback answer দাও
     try:
         bot.answer_callback_query(call.id, text="⏳ যাচাই করা হচ্ছে...", show_alert=False)
     except Exception as e:
         print("answer_callback_query error:", e)
 
     not_member = []
-    for ch in CHANNELS:
+    for ch in get_channels():
         try:
             member = bot.get_chat_member(ch, chat_id)
             if member.status in ("left", "kicked"):
@@ -157,7 +204,6 @@ def callback_verify(call: types.CallbackQuery):
             print("edit_message error:", e)
         return
 
-    # সব ঠিক থাকলে
     try:
         bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
     except Exception:
@@ -178,8 +224,9 @@ def callback_verify(call: types.CallbackQuery):
     kb = links_keyboard_for_user(user.id)
     bot.send_message(chat_id=user.id, text="✅ Verification successful! নিচে তোমার লিংকগুলো:", reply_markup=kb)
 
+    # group log
+    log_to_group(user, action="verified")
 
-# /ck
 @bot.message_handler(commands=['ck'])
 def cmd_ck(m: types.Message):
     if not is_admin(m.from_user.id):
@@ -205,8 +252,6 @@ def cmd_ck(m: types.Message):
         except Exception as e:
             print("send user info error:", e)
 
-
-# /admin
 @bot.message_handler(commands=['admin'])
 def cmd_admin(m: types.Message):
     if m.from_user.id != OWNER_ID:
@@ -224,8 +269,6 @@ def cmd_admin(m: types.Message):
     add_admin(new_admin_id)
     bot.reply_to(m, f"✅ User <code>{new_admin_id}</code> কে admin বানানো হলো।")
 
-
-# /removeadmin
 @bot.message_handler(commands=['removeadmin'])
 def cmd_remove_admin(m: types.Message):
     if m.from_user.id != OWNER_ID:
@@ -249,8 +292,6 @@ def cmd_remove_admin(m: types.Message):
     remove_admin(rem_id)
     bot.reply_to(m, f"✅ User <code>{rem_id}</code> কে admin থেকে বাদ দেয়া হলো।")
 
-
-# /listadmins
 @bot.message_handler(commands=['listadmins'])
 def cmd_list_admins(m: types.Message):
     admins = list_admins()
@@ -260,31 +301,60 @@ def cmd_list_admins(m: types.Message):
     text = "🔐 Admins:\n" + "\n".join([f"- <code>{a}</code>" for a in admins])
     bot.reply_to(m, text)
 
+# Owner-only channel management
+@bot.message_handler(commands=['addchannel'])
+def cmd_addchannel(m: types.Message):
+    if m.from_user.id != OWNER_ID:
+        return
+    parts = m.text.strip().split()
+    if len(parts) != 2:
+        bot.reply_to(m, "ব্যবহার: /addchannel <@channel>")
+        return
+    ch = parts[1]
+    add_channel(ch)
+    bot.reply_to(m, f"✅ চ্যানেল {ch} এড করা হলো।")
 
-# /help
+@bot.message_handler(commands=['removechannel'])
+def cmd_removechannel(m: types.Message):
+    if m.from_user.id != OWNER_ID:
+        return
+    parts = m.text.strip().split()
+    if len(parts) != 2:
+        bot.reply_to(m, "ব্যবহার: /removechannel <@channel>")
+        return
+    ch = parts[1]
+    remove_channel(ch)
+    bot.reply_to(m, f"✅ চ্যানেল {ch} রিমুভ করা হলো।")
+
 @bot.message_handler(commands=['help'])
 def cmd_help(m: types.Message):
-    help_text = (
-        "/start — ভেরিফিকেশন শুরু\n"
-        "/ck — ভেরিফায়েড লিস্ট (admin only)\n"
-        "/listadmins — admin তালিকা\n"
-        "/admin <user_id> — admin বানানো (OWNER only)\n"
-        "/removeadmin <user_id> — admin রিমুভ (OWNER only)\n"
-    )
+    if m.from_user.id == OWNER_ID:
+        help_text = (
+            "/start — ভেরিফিকেশন শুরু\n"
+            "/ck — ভেরিফায়েড লিস্ট (admin only)\n"
+            "/listadmins — admin তালিকা\n"
+            "/admin <user_id> — admin বানানো (OWNER only)\n"
+            "/removeadmin <user_id> — admin রিমুভ (OWNER only)\n"
+            "/addchannel <@channel> — নতুন চ্যানেল যোগ (OWNER only)\n"
+            "/removechannel <@channel> — চ্যানেল রিমুভ (OWNER only)\n"
+        )
+    else:
+        help_text = (
+            "/start — ভেরিফিকেশন শুরু\n"
+            "/ck — ভেরিফায়েড লিস্ট (admin only)\n"
+            "/listadmins — admin তালিকা\n"
+        )
     bot.reply_to(m, help_text)
 
-
-# fallback
 @bot.message_handler(func=lambda m: True)
 def fallback(m: types.Message):
     pass
-
 
 # ---------------- Main ----------------
 if __name__ == "__main__":
     init_db()
     print("Bot is running...")
-    while True:  # লুপে চালাই যাতে বট কখনো বন্ধ না হয়
+    while True:
         try:
             bot.infinity_polling(timeout=60, long_polling_timeout=60)
         except Exception as e:
