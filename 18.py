@@ -6,21 +6,17 @@ import sqlite3
 import time
 from datetime import datetime
 
-# ========== CONFIG (এখানে নিজের ভ্যালু বসাও) ==========
+# ========== CONFIG ==========
 BOT_TOKEN = "8371666572:AAGvdLmzlEi-NEoFgSfJwli17VmQpked8-M"
-# চ্যানেল লিস্ট — public username হিসেবে @name বা numeric channel id ব্যবহার করো
 CHANNELS = ["@vidoe66", "@vidoe55", "@vidoe88"]
 
-# ভেরিফাই হলে ইউজারকে যে লিংকগুলো দেখাবে (নিজে বদলাবে)
 LINK_LAYLA = "https://www.revenuecpmgate.com/i7pd0pg6?key=51e488e96a25bdded506db61a1e879c1"
 LINK_OTHER = "https://www.revenuecpmgate.com/ecixkfkxp?key=e5afcf213bd677e460eaf971ad6f862a"
 VIDEO_LINK_TEMPLATE = "https://www.revenuecpmgate.com/jxgvbk9x4?key=7a6c389891030baabd6368f0fcff5b3f"
 
-# OWNER numeric telegram id (তুমি) — OWNER কে ডিফল্ট admin হিসেবে যোগ করা হবে
 OWNER_ID = 7224513731
-
 DB_PATH = "verified_users.db"
-# ======================================================
+# ========================================
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
@@ -44,7 +40,6 @@ def init_db():
             user_id INTEGER PRIMARY KEY
         )
     """)
-    # OWNER কে admin বানাই (ignore যদি আগে থাকে)
     cur.execute("INSERT OR IGNORE INTO admins(user_id) VALUES(?)", (OWNER_ID,))
     conn.commit()
     conn.close()
@@ -108,9 +103,7 @@ def is_admin(user_id):
 def channels_join_keyboard():
     kb = types.InlineKeyboardMarkup(row_width=1)
     for ch in CHANNELS:
-        # URL button — ইউজারকে চ্যানেলে নিয়ে যাবে
         kb.add(types.InlineKeyboardButton(text=f"Join {ch}", url=f"https://t.me/{ch.lstrip('@')}"))
-    # Verify button
     kb.add(types.InlineKeyboardButton(text="✅ Verify", callback_data="verify_join"))
     return kb
 
@@ -137,69 +130,69 @@ def callback_verify(call: types.CallbackQuery):
     user = call.from_user
     chat_id = user.id
 
-    # চ্যানেলগুলোতে মেম্বারশিপ চেক
+    # সবসময় সাথে সাথে callback answer দাও
+    try:
+        bot.answer_callback_query(call.id, text="⏳ যাচাই করা হচ্ছে...", show_alert=False)
+    except Exception as e:
+        print("answer_callback_query error:", e)
+
     not_member = []
     for ch in CHANNELS:
         try:
             member = bot.get_chat_member(ch, chat_id)
-            status = member.status
-            if status in ("left", "kicked"):
+            if member.status in ("left", "kicked"):
                 not_member.append(ch)
-        except Exception as e:
-            # bot may not have access to check private channel — treat as not member
+        except Exception:
             not_member.append(ch)
 
     if not_member:
-        text = "তুমি এখনো নিচের চ্যানেল(গুলো)-এ নেই:\n" + "\n".join(not_member)
-        text += "\n\nঅনুগ্রহ করে জয়েন করে আবার Verify চাপো।"
-        # ছোট alert ও edit message করে ইউজারকে দেখাই
-        bot.answer_callback_query(call.id, text="সব চ্যানেলে জয়েন করো", show_alert=True)
+        text = "❌ এখনো জয়েন করনি:\n" + "\n".join(not_member)
+        text += "\n\n👉 জয়েন করে আবার Verify চাপো।"
         try:
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                                  text=text, reply_markup=channels_join_keyboard())
-        except Exception:
-            pass
+            bot.edit_message_text(chat_id=call.message.chat.id,
+                                  message_id=call.message.message_id,
+                                  text=text,
+                                  reply_markup=channels_join_keyboard())
+        except Exception as e:
+            print("edit_message error:", e)
         return
 
-    # সব চ্যানেলে যেই থাকলে ভেরিফাই সফল
+    # সব ঠিক থাকলে
     try:
-        # পুরোনো মেসেজ ডিলিট (প্রাইভেট চ্যাটে সম্ভব না হলে ignore)
         bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
     except Exception:
         pass
 
-    # প্রোফাইল ফটো সংগ্রহ
     photo_file_id = None
     try:
         photos = bot.get_user_profile_photos(user.id)
         if photos.total_count > 0:
             photo_file_id = photos.photos[0][-1].file_id
     except Exception:
-        photo_file_id = None
+        pass
 
-    save_verified(user.id, getattr(user, "username", None), getattr(user, "first_name", ""), getattr(user, "last_name", ""), photo_file_id)
+    save_verified(user.id, getattr(user, "username", None),
+                  getattr(user, "first_name", ""), getattr(user, "last_name", ""),
+                  photo_file_id)
 
     kb = links_keyboard_for_user(user.id)
     bot.send_message(chat_id=user.id, text="✅ Verification successful! নিচে তোমার লিংকগুলো:", reply_markup=kb)
 
 
-# /ck — admin only: ভেরিফায়েড লিস্ট দেখাবে
+# /ck
 @bot.message_handler(commands=['ck'])
 def cmd_ck(m: types.Message):
-    uid = m.from_user.id
-    if not is_admin(uid):
-        bot.reply_to(m, "❌ তোমার অনুমতি নেই। (admin ছাড়া ব্যবহার করা যাবে না)")
+    if not is_admin(m.from_user.id):
+        bot.reply_to(m, "❌ অনুমতি নাই।")
         return
-
     rows = get_verified_all()
     if not rows:
-        bot.reply_to(m, "কোনো ভেরিফায়েড ইউজার পাওয়া যায়নি।")
+        bot.reply_to(m, "কোনো ভেরিফায়েড ইউজার নাই।")
         return
-
-    bot.reply_to(m, f"🔎 ভেরিফায়েড ইউজার সংখ্যা: {len(rows)} — এখন তালিকা পাঠাচ্ছি...")
+    bot.reply_to(m, f"🔎 ভেরিফায়েড ইউজার সংখ্যা: {len(rows)}")
     for r in rows:
         user_id, username, first_name, last_name, photo_file_id, verified_at = r
-        t = datetime.utcfromtimestamp(verified_at).strftime("%Y-%m-%d %H:%M:%S (UTC)")
+        t = datetime.utcfromtimestamp(verified_at).strftime("%Y-%m-%d %H:%M:%S UTC")
         txt = (f"ID: <code>{user_id}</code>\n"
                f"নাম: {first_name} {last_name}\n"
                f"Username: @{username if username else '-'}\n"
@@ -209,63 +202,55 @@ def cmd_ck(m: types.Message):
                 bot.send_photo(m.chat.id, photo=photo_file_id, caption=txt)
             else:
                 bot.send_message(m.chat.id, txt)
-        except Exception:
-            bot.send_message(m.chat.id, txt)
+        except Exception as e:
+            print("send user info error:", e)
 
 
-# /admin <user_id> — OWNER only: নতুন admin যোগ
+# /admin
 @bot.message_handler(commands=['admin'])
 def cmd_admin(m: types.Message):
     if m.from_user.id != OWNER_ID:
-        bot.reply_to(m, "এই কমান্ডটি শুধুমাত্র OWNER ব্যবহার করতে পারবে।")
+        bot.reply_to(m, "শুধু OWNER ব্যবহার করতে পারবে।")
         return
-
     parts = m.text.strip().split()
     if len(parts) != 2:
         bot.reply_to(m, "ব্যবহার: /admin <user_id>")
         return
-
     try:
         new_admin_id = int(parts[1])
     except ValueError:
         bot.reply_to(m, "সঠিক numeric user_id পাঠাও।")
         return
-
     add_admin(new_admin_id)
     bot.reply_to(m, f"✅ User <code>{new_admin_id}</code> কে admin বানানো হলো।")
 
 
-# /removeadmin <user_id> — OWNER only: admin রিমুভ
+# /removeadmin
 @bot.message_handler(commands=['removeadmin'])
 def cmd_remove_admin(m: types.Message):
     if m.from_user.id != OWNER_ID:
-        bot.reply_to(m, "এই কমান্ডটি শুধুমাত্র OWNER ব্যবহার করতে পারবে।")
+        bot.reply_to(m, "শুধু OWNER ব্যবহার করতে পারবে।")
         return
-
     parts = m.text.strip().split()
     if len(parts) != 2:
         bot.reply_to(m, "ব্যবহার: /removeadmin <user_id>")
         return
-
     try:
         rem_id = int(parts[1])
     except ValueError:
         bot.reply_to(m, "সঠিক numeric user_id পাঠাও।")
         return
-
     if rem_id == OWNER_ID:
-        bot.reply_to(m, "OWNER নিজেকে রিমুভ করতে পারবে না।")
+        bot.reply_to(m, "OWNER কে রিমুভ করা যাবে না।")
         return
-
     if not is_admin(rem_id):
-        bot.reply_to(m, f"User <code>{rem_id}</code> এখনো admin নয়।", parse_mode="HTML")
+        bot.reply_to(m, f"User <code>{rem_id}</code> admin নয়।")
         return
-
     remove_admin(rem_id)
-    bot.reply_to(m, f"✅ User <code>{rem_id}</code> কে admin তালিকা থেকে বাদ দেয়া হলো।", parse_mode="HTML")
+    bot.reply_to(m, f"✅ User <code>{rem_id}</code> কে admin থেকে বাদ দেয়া হলো।")
 
 
-# /listadmins — অ্যাডমিন তালিকা দেখাবে
+# /listadmins
 @bot.message_handler(commands=['listadmins'])
 def cmd_list_admins(m: types.Message):
     admins = list_admins()
@@ -273,7 +258,7 @@ def cmd_list_admins(m: types.Message):
         bot.reply_to(m, "কোনো admin নাই।")
         return
     text = "🔐 Admins:\n" + "\n".join([f"- <code>{a}</code>" for a in admins])
-    bot.reply_to(m, text, parse_mode="HTML")
+    bot.reply_to(m, text)
 
 
 # /help
@@ -281,18 +266,17 @@ def cmd_list_admins(m: types.Message):
 def cmd_help(m: types.Message):
     help_text = (
         "/start — ভেরিফিকেশন শুরু\n"
-        "/ck — ভেরিফায়েড তালিকা (admin only)\n"
+        "/ck — ভেরিফায়েড লিস্ট (admin only)\n"
         "/listadmins — admin তালিকা\n"
-        "/admin <user_id> — OWNER দ্বারা admin বানানো\n"
-        "/removeadmin <user_id> — OWNER দ্বারা admin রিমুভ করা\n"
+        "/admin <user_id> — admin বানানো (OWNER only)\n"
+        "/removeadmin <user_id> — admin রিমুভ (OWNER only)\n"
     )
     bot.reply_to(m, help_text)
 
 
-# Catch-all for safety
+# fallback
 @bot.message_handler(func=lambda m: True)
 def fallback(m: types.Message):
-    # খুব প্রয়োজন হলে কাস্টম রেসপন্স দিতো, এখানে নিট্রাল রেখেছি
     pass
 
 
@@ -300,9 +284,9 @@ def fallback(m: types.Message):
 if __name__ == "__main__":
     init_db()
     print("Bot is running...")
-    try:
-        bot.infinity_polling(timeout=60, long_polling_timeout = 60)
-    except KeyboardInterrupt:
-        print("Stopped by user")
-    except Exception as e:
-        print("Bot crashed:", e)
+    while True:  # লুপে চালাই যাতে বট কখনো বন্ধ না হয়
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print("Polling error:", e)
+            time.sleep(3)
